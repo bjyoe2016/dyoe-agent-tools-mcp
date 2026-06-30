@@ -1,0 +1,16 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": [
+    "bjyoe2016"
+  ],
+  "name": "DYOE Agent Tools",
+  "description": "Pay-per-call trust, due-diligence, commerce & data tools for AI agents, settled in USDC on Base via x402 — including the human-verified Guardian approval layer (a real person signs off on high-stakes agent actions).",
+  "category": "Finance",
+  "environmentVariables": [
+    {
+      "name": "WALLET_PRIVATE_KEY",
+      "description": "Optional. Private key of a FUNDED, LOW-BALANCE Base burner wallet (holds USDC). Each tool call spends USDC via x402. Never use your primary wallet; the key stays local. Leave unset for free PREVIEW mode.",
+      "required": false
+    }
+  ]
+}

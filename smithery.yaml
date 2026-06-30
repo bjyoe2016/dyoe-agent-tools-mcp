@@ -1,0 +1,20 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      walletPrivateKey:
+        type: string
+        title: Base Wallet Private Key (optional)
+        description: >-
+          Private key of a FUNDED, LOW-BALANCE Base wallet that holds USDC. Each tool
+          call spends USDC via the x402 protocol. Use a dedicated burner wallet — NEVER
+          your primary. The key stays on your machine and never leaves it. Leave blank
+          to run in free PREVIEW mode (returns the price quote instead of calling).
+    required: []
+  commandFunction: |-
+    (config) => ({
+      command: 'node',
+      args: ['index.js'],
+      env: config.walletPrivateKey ? { WALLET_PRIVATE_KEY: config.walletPrivateKey } : {}
+    })

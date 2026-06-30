@@ -1,0 +1,43 @@
+{
+  "name": "dyoe-agent-tools-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for the DYOE Agent Tools — pay-per-call trust, due-diligence, commerce & data tools for AI agents, settled in USDC on Base via x402. Includes the human-verified Guardian approval layer.",
+  "type": "module",
+  "bin": {
+    "dyoe-agent-tools-mcp": "index.js"
+  },
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "x402",
+    "agent",
+    "trust",
+    "scam-check",
+    "due-diligence",
+    "human-in-the-loop",
+    "base",
+    "usdc",
+    "dyoe"
+  ],
+  "license": "MIT",
+  "author": "DYOE Way",
+  "homepage": "https://agents.dyoeway.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bjyoe2016/dyoe-agent-tools-mcp.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "viem": "^2.53.1",
+    "x402-fetch": "^1.2.0",
+    "zod": "^4.4.3"
+  }
+}
