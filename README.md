@@ -23,6 +23,28 @@ Live API: **https://agents.dyoeway.org** · Discovery manifest: [`/.well-known/x
 | `crypto_price` · `crypto_market` · `crypto_trending` · `crypto_movers` | $0.01 | Market data for trading agents |
 | `fx_rate` · `weather` · `wiki_summary` | $0.01 | Currency, weather & Wikipedia utilities |
 
+## 🛡️ One-line guard (make any agent safe to pay)
+
+Wrap your x402 paying `fetch` — DYOE verifies every payee **before** money moves, and blocks scams automatically:
+
+```js
+import { wrapFetchWithPayment } from "x402-fetch";
+import { dyoeGuard } from "dyoe-agent-tools-mcp/guard";
+
+const pay  = wrapFetchWithPayment(fetch, account);   // your normal x402 fetch
+const safe = dyoeGuard(pay);                          // ← one line. every payee now verified.
+
+await safe("https://some-seller.example/thing");     // throws automatically if it's a scam
+```
+
+For high-stakes actions, require a real human sign-off:
+
+```js
+import { requireApproval } from "dyoe-agent-tools-mcp/guard";
+const decision = await requireApproval(pay, { action: "wire funds", counterparty: "acme.com", amount: 5000 });
+// decision.decision === "approved" | "denied", with a signed, verifiable authorization
+```
+
 ## Install
 
 Add to your MCP client config (e.g. Claude Desktop / Cursor):

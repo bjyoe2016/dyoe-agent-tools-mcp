@@ -9,7 +9,10 @@
   "main": "index.js",
   "files": [
     "index.js",
-    "README.md"
+    "guard.js",
+    "README.md",
+    "SPEC.md",
+    "TRUST-METHODOLOGY.md"
   ],
   "scripts": {
     "start": "node index.js"
