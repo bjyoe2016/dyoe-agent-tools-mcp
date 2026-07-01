@@ -6,6 +6,9 @@ Pay-per-call tools for AI agents, settled in **USDC on Base** via the [x402](htt
 
 Live API: **https://agents.dyoeway.org** · Discovery manifest: [`/.well-known/x402.json`](https://agents.dyoeway.org/.well-known/x402.json)
 
+📜 **Open protocol:** [Credential Spec](./SPEC.md) — verify any DYOE credential yourself, no permission needed.
+🔎 **How we decide trust:** [Trust Methodology](./TRUST-METHODOLOGY.md) — our scoring, approvals, and how we handle mistakes.
+
 ## What's inside (16 tools)
 
 | Tool | Price | What it does |
