@@ -1,3 +1,6 @@
+# Smithery config (legacy GitHub-repo deploy format; still read for repo-linked servers).
+# Smithery's current path for local stdio servers is an MCPB bundle (manifest.json -> server.mcpb,
+# then `smithery mcp publish ./server.mcpb -n <namespace>/dyoe-trust-mcp`); see PUBLISH-STEPS.md.
 startCommand:
   type: stdio
   configSchema:
@@ -5,16 +8,24 @@ startCommand:
     properties:
       walletPrivateKey:
         type: string
-        title: Base Wallet Private Key (optional)
+        title: Base wallet private key (optional)
         description: >-
-          Private key of a FUNDED, LOW-BALANCE Base wallet that holds USDC. Each tool
-          call spends USDC via the x402 protocol. Use a dedicated burner wallet — NEVER
-          your primary. The key stays on your machine and never leaves it. Leave blank
-          to run in free PREVIEW mode (returns the price quote instead of calling).
+          Private key of a DEDICATED, low-balance Base wallet holding USDC. Each tool call pays its
+          x402 price from it. Never use your main wallet. Leave empty for free PREVIEW mode, which
+          returns the 402 payment requirements instead of paying.
+      maxPaymentUsd:
+        type: number
+        title: Max payment per call (USD)
+        default: 0.1
+        description: Calls priced above this are refused locally. /review costs $15.
     required: []
   commandFunction: |-
     (config) => ({
-      command: 'node',
-      args: ['index.js'],
-      env: config.walletPrivateKey ? { WALLET_PRIVATE_KEY: config.walletPrivateKey } : {}
+      command: 'npx',
+      args: ['-y', 'dyoe-trust-mcp'],
+      env: {
+        ...(config.walletPrivateKey ? { WALLET_PRIVATE_KEY: config.walletPrivateKey } : {}),
+        ...(config.maxPaymentUsd != null ? { DYOE_MAX_PAYMENT_USD: String(config.maxPaymentUsd) } : {})
+      }
     })
+  exampleConfig: {}

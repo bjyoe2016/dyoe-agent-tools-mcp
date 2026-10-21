@@ -1,0 +1,40 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bjyoe2016/dyoe-trust-mcp",
+  "title": "DYOE Trust Tools (x402)",
+  "description": "22 pay-per-call x402 tools for agents: scam checks, payment pre-flight, approvals, data. USDC/Base",
+  "repository": {
+    "url": "https://github.com/bjyoe2016/dyoe-agent-tools-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://agents.dyoeway.org",
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "dyoe-trust-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "WALLET_PRIVATE_KEY",
+          "description": "Optional. Key of a dedicated, low-balance Base wallet holding USDC; pays each call via x402. Unset = free preview (returns the 402 quote).",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "DYOE_MAX_PAYMENT_USD",
+          "description": "Optional per-call payment cap in USD (default 0.10). /review costs $15 and needs a higher cap.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "number",
+          "default": "0.10"
+        }
+      ]
+    }
+  ]
+}

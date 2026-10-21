@@ -1,109 +1,111 @@
 #!/usr/bin/env node
-// DYOE Agent Tools — MCP server.
-// Exposes the DYOE x402 tool shelf (trust, due-diligence, commerce & data) to any
-// MCP-capable agent (Claude, Cursor, etc.). Each call pays the tool's x402 price in
-// USDC on Base, automatically, from a wallet the OPERATOR supplies (WALLET_PRIVATE_KEY).
+// dyoe-trust-mcp: the DYOE x402 tool shelf (agents.dyoeway.org) as an MCP stdio server.
 //
-// SECURITY: the wallet key never leaves your machine — this server runs locally (stdio)
-// and signs payments client-side. Use a dedicated, low-balance Base "burner" wallet.
-// With no key set, the server still runs in FREE/PREVIEW mode (returns the 402 quote).
+// One MCP tool per live paid endpoint (22). Names, prices, descriptions and inputs come from
+// catalog.json, generated from the seller's catalog.js, which the seller's test suite keeps equal
+// to the live 402 challenges. The 402 is still the authority: every result reports the price the
+// endpoint actually quoted.
+//
+// Payment model (the wallet never leaves this machine):
+//   - No WALLET_PRIVATE_KEY: PREVIEW mode. Each call makes one UNPAID request and returns the x402
+//     payment requirements (HTTP 402). Nothing is signed or spent.
+//   - WALLET_PRIVATE_KEY set (a dedicated, low-balance Base wallet holding USDC): calls are paid via
+//     x402-fetch, capped per call at DYOE_MAX_PAYMENT_USD (default 0.10). Tools priced above the cap
+//     (e.g. /review at $15) are refused locally until the cap is raised deliberately.
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { wrapFetchWithPayment } from "x402-fetch";
-import { privateKeyToAccount } from "viem/accounts";
 
-const BASE = process.env.DYOE_BASE_URL || "https://agents.dyoeway.org";
-const KEY = process.env.WALLET_PRIVATE_KEY; // funded, low-balance Base burner wallet
-const payFetch = KEY ? wrapFetchWithPayment(fetch, privateKeyToAccount(KEY)) : fetch;
+const PKG = JSON.parse(fs.readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8"));
+const CATALOG = JSON.parse(fs.readFileSync(fileURLToPath(new URL("./catalog.json", import.meta.url)), "utf8"));
+const BASE = (process.env.DYOE_BASE_URL || CATALOG.origin).replace(/\/$/, "");
+const KEY = process.env.WALLET_PRIVATE_KEY || "";
+const MAX_USD = Number(process.env.DYOE_MAX_PAYMENT_USD || 0.10);
+const usd = (s) => Number(String(s).replace(/[$,]/g, ""));
 
-async function call(path) {
+let payFetch = null;
+async function payingFetch() {
+  if (payFetch) return payFetch;
+  const [{ wrapFetchWithPayment }, { privateKeyToAccount }] = await Promise.all([import("x402-fetch"), import("viem/accounts")]);
+  payFetch = wrapFetchWithPayment(fetch, privateKeyToAccount(KEY), BigInt(Math.round(MAX_USD * 1e6)));
+  return payFetch;
+}
+
+export const toolName = (p) => "dyoe_" + p.replace(/^\//, "").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+
+function inputSchema(query) {
+  const shape = {};
+  for (const [k, q] of Object.entries(query)) {
+    let t = q.type === "number" ? z.number() : z.string();
+    t = t.describe(`${q.description}${q.example != null ? ` (e.g. ${q.example})` : ""}`);
+    shape[k] = q.required ? t : t.optional();
+  }
+  return shape;
+}
+
+function decode402(res, body) {
+  const h = res.headers.get("payment-required");
+  let v2 = null;
+  if (h) { try { v2 = JSON.parse(Buffer.from(h, "base64").toString()); } catch {} }
+  const accepts = (body && body.accepts) || (v2 && v2.accepts) || [];
+  const a = accepts[0] || {};
+  const amt = a.maxAmountRequired ?? a.amount;
+  return { price_usd: amt != null ? Number(amt) / 1e6 : null, network: a.network, asset: a.asset, payTo: a.payTo, x402Version: body && body.x402Version, accepts };
+}
+
+const text = (o, isError = false) => ({ content: [{ type: "text", text: typeof o === "string" ? o : JSON.stringify(o, null, 2) }], ...(isError ? { isError: true } : {}) });
+
+async function callRoute(route, args) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(args || {})) if (v != null && v !== "") qs.set(k, String(v));
+  const url = `${BASE}${route.path}${qs.toString() ? "?" + qs : ""}`;
+  const price = usd(route.price);
   try {
-    const res = await payFetch(`${BASE}${path}`, { method: "GET" });
-    const data = await res.json();
-    if (res.status === 402 && !KEY) {
-      return { content: [{ type: "text", text:
-        "PREVIEW (no wallet configured). This tool costs USDC on Base via x402.\n" +
-        "Set WALLET_PRIVATE_KEY (a funded, low-balance Base burner wallet) to call it for real.\n\n" +
-        "402 quote:\n" + JSON.stringify(data, null, 2) }] };
+    if (!KEY) {
+      const res = await fetch(url, { headers: { accept: "application/json" } });
+      const raw = await res.text();
+      let body; try { body = JSON.parse(raw); } catch { body = raw; }
+      if (res.status === 402) {
+        return text({
+          payment_required: true, status: 402, tool: route.path, listed_price: route.price, ...decode402(res, body),
+          how: "PREVIEW mode: no WALLET_PRIVATE_KEY is set, so nothing was paid. Set WALLET_PRIVATE_KEY to a dedicated, " +
+               "low-balance Base wallet holding USDC to call this tool for real, or pay the 402 at the URL yourself.",
+          url,
+        });
+      }
+      return text({ status: res.status, body }, !res.ok);
     }
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
-  } catch (err) {
-    return { content: [{ type: "text", text: `Error calling ${path}: ${err.message || err}` }], isError: true };
+    if (price > MAX_USD) {
+      return text(`Refused locally: ${route.path} costs ${route.price}, above DYOE_MAX_PAYMENT_USD=$${MAX_USD.toFixed(2)}. ` +
+                  "Raise DYOE_MAX_PAYMENT_USD deliberately to allow it.", true);
+    }
+    const res = await (await payingFetch())(url, { method: "GET", headers: { accept: "application/json" } });
+    const raw = await res.text();
+    let body; try { body = JSON.parse(raw); } catch { body = raw; }
+    const pr = res.headers.get("x-payment-response");
+    let settlement = null; if (pr) { try { settlement = JSON.parse(Buffer.from(pr, "base64").toString()); } catch {} }
+    return text({ status: res.status, charged: !!(settlement && settlement.success !== false), settlement, body }, !res.ok);
+  } catch (e) {
+    return text(`Error calling ${route.path}: ${e.message || e}`, true);
   }
 }
 
-const q = (o) => Object.entries(o).filter(([, v]) => v != null && v !== "")
-  .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-
-// The DYOE shelf — descriptions lead with what agents search; prices stated per call.
-const TOOLS = [
-  { name: "trust_check", title: "Trust Check ($0.01)",
-    desc: "Is this counterparty safe? Scam, fraud, phishing & rug-risk check before an agent trusts or pays any website, business, wallet, or endpoint. Returns verdict (safe/caution/avoid), trust_score, domain age & red_flags. The trust tollbooth of the agent economy. Costs $0.01 USDC on Base.",
-    input: { target: z.string().describe("Domain/URL/wallet to verify, e.g. example.com") },
-    path: (a) => `/verify?${q({ target: a.target })}` },
-  { name: "guardian_approve", title: "Guardian — Human-Verified Approval ($3.00)",
-    desc: "HUMAN-VERIFIED approval for an agent action. Before an agent pays, signs, or acts for its human, a REAL PERSON signs off when it matters (plus automated trust + policy). Returns approved / pending_human / denied. The human-in-the-loop accountability layer agents can't get anywhere else. Costs $3.00 USDC on Base.",
-    input: { action: z.string().describe("What the agent wants to do"),
-             counterparty: z.string().describe("Domain/entity involved"),
-             amount: z.string().optional().describe("USD amount, if any") },
-    path: (a) => `/approve?${q({ action: a.action, counterparty: a.counterparty, amount: a.amount })}` },
-  { name: "intel_dossier", title: "Intel Dossier ($0.10)",
-    desc: "Full due-diligence dossier on any company or website in ONE call: what they do, legitimacy + trust verdict, domain age, contacts, social presence, scam red flags. Counterparty research & background checks for agents — one call instead of ten. Costs $0.10 USDC on Base.",
-    input: { target: z.string().describe("Company domain to research, e.g. stripe.com") },
-    path: (a) => `/intel?${q({ target: a.target })}` },
-  { name: "site_audit", title: "Site Audit ($0.05)",
-    desc: "Is this website legit and trustworthy? Full trust + SEO + contactability audit scored 0-100 with a legitimacy verdict and prioritized fixes. Due diligence in one call. Costs $0.05 USDC on Base.",
-    input: { url: z.string().describe("Website URL to audit") },
-    path: (a) => `/audit?${q({ url: a.url })}` },
-  { name: "merchant_trust", title: "Merchant Trust ($0.05)",
-    desc: "Is this online store safe to buy from? Scam/fraud check + trust verdict (safe/caution/avoid) + store signals (checkout, returns, payment methods) — counterparty trust for shopping & commerce agents before they pay. Costs $0.05 USDC on Base.",
-    input: { url: z.string().describe("Store URL") },
-    path: (a) => `/merchant?${q({ url: a.url })}` },
-  { name: "token_intel", title: "Token Intel — Trust-Vetted ($0.05)",
-    desc: "TRUST-VETTED token intelligence — price + market data PLUS a scam/rug-risk read on the project behind the coin (legit site? brand-new domain? red flags?). Only DYOE fuses market data with trust. Costs $0.05 USDC on Base.",
-    input: { symbol: z.string().describe("Coin symbol, e.g. btc") },
-    path: (a) => `/token?${q({ symbol: a.symbol })}` },
-  { name: "extract_text", title: "Extract Page Text ($0.01)",
-    desc: "Extract clean main text content from any web page (no nav/ads) — for research & summarizing agents. Costs $0.01 USDC on Base.",
-    input: { url: z.string().describe("Page URL") }, path: (a) => `/extract?${q({ url: a.url })}` },
-  { name: "extract_contacts", title: "Extract Contacts ($0.01)",
-    desc: "Extract emails, phone numbers & social links from any website — lead enrichment & prospecting for agents. Costs $0.01 USDC on Base.",
-    input: { url: z.string().describe("Website URL") }, path: (a) => `/contacts?${q({ url: a.url })}` },
-  { name: "page_metadata", title: "Page Metadata ($0.01)",
-    desc: "Extract title, description, OpenGraph image, favicon & canonical from any URL — link previews & summaries. Costs $0.01 USDC on Base.",
-    input: { url: z.string().describe("Page URL") }, path: (a) => `/metadata?${q({ url: a.url })}` },
-  { name: "crypto_price", title: "Crypto Price ($0.01)",
-    desc: "Live crypto price + 24h change, market cap & volume for any coin — for trading agents. Costs $0.01 USDC on Base.",
-    input: { symbol: z.string().describe("Coin symbol, e.g. eth") }, path: (a) => `/crypto?${q({ symbol: a.symbol })}` },
-  { name: "crypto_market", title: "Crypto Market Overview ($0.01)",
-    desc: "Global crypto market overview — total market cap, 24h change, BTC/ETH dominance. Costs $0.01 USDC on Base.",
-    input: {}, path: () => `/market` },
-  { name: "crypto_trending", title: "Trending Coins ($0.01)",
-    desc: "The coins trending right now — for trading & research agents. Costs $0.01 USDC on Base.",
-    input: {}, path: () => `/trending` },
-  { name: "crypto_movers", title: "Top Movers ($0.01)",
-    desc: "Top gainers & losers (24h) across the top 100 coins — for trading agents. Costs $0.01 USDC on Base.",
-    input: {}, path: () => `/movers` },
-  { name: "fx_rate", title: "Currency Conversion ($0.01)",
-    desc: "Currency conversion + live exchange rate (ECB data). Costs $0.01 USDC on Base.",
-    input: { from: z.string().describe("From currency, e.g. USD"), to: z.string().describe("To currency, e.g. EUR"),
-             amount: z.string().optional().describe("Amount, default 1") },
-    path: (a) => `/fx?${q({ from: a.from, to: a.to, amount: a.amount })}` },
-  { name: "weather", title: "Weather ($0.01)",
-    desc: "Current conditions + 3-day forecast for any city — for travel & planning agents. Costs $0.01 USDC on Base.",
-    input: { city: z.string().describe("City, e.g. Atlanta") }, path: (a) => `/weather?${q({ city: a.city })}` },
-  { name: "wiki_summary", title: "Wikipedia Summary ($0.01)",
-    desc: "Factual summary of any topic from Wikipedia — for research agents. Costs $0.01 USDC on Base.",
-    input: { topic: z.string().describe("Topic, e.g. Bitcoin") }, path: (a) => `/wiki?${q({ topic: a.topic })}` },
-];
-
-const server = new McpServer({ name: "dyoe-agent-tools", version: "1.0.0" });
-for (const t of TOOLS) {
-  server.registerTool(t.name, { title: t.title, description: t.desc, inputSchema: t.input },
-    async (args) => call(t.path(args || {})));
+export function buildServer() {
+  const server = new McpServer({ name: "dyoe-trust", version: PKG.version });
+  for (const r of CATALOG.routes) {
+    server.registerTool(toolName(r.path), {
+      title: `${r.serviceName} (${r.price})`,
+      description: `${r.description} Price: ${r.price} USDC on Base per call, paid via x402.`,
+      inputSchema: inputSchema(r.query),
+      annotations: { title: `${r.serviceName} (${r.price})`, readOnlyHint: r.path !== "/review" && r.path !== "/approve", openWorldHint: true },
+    }, async (args) => callRoute(r, args));
+  }
+  return server;
 }
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error(`DYOE Agent Tools MCP server running (stdio) — ${TOOLS.length} tools, base ${BASE}${KEY ? "" : " [PREVIEW: no wallet]"}`);
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await buildServer().connect(new StdioServerTransport());
+  console.error(`dyoe-trust-mcp ${PKG.version} (stdio): ${CATALOG.routes.length} tools, ${BASE}${KEY ? `, paying up to $${MAX_USD.toFixed(2)}/call` : " [PREVIEW: no wallet, nothing is paid]"}`);
+}

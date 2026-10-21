@@ -1,0 +1,8 @@
+test/
+scripts/
+*.mcpb
+*.tgz
+server.json
+smithery.yaml
+PUBLISH-STEPS.md
+.gitignore

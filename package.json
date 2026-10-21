@@ -1,46 +1,56 @@
 {
-  "name": "dyoe-agent-tools-mcp",
+  "name": "dyoe-trust-mcp",
   "version": "1.0.0",
-  "description": "MCP server for the DYOE Agent Tools — pay-per-call trust, due-diligence, commerce & data tools for AI agents, settled in USDC on Base via x402. Includes the human-verified Guardian approval layer.",
+  "mcpName": "io.github.bjyoe2016/dyoe-trust-mcp",
+  "description": "MCP server for DYOE's 22 pay-per-call x402 tools: scam and trust checks, payment pre-flight, wallet screening, agent approvals, contacts and data. USDC on Base.",
   "type": "module",
-  "bin": {
-    "dyoe-agent-tools-mcp": "index.js"
-  },
   "main": "index.js",
+  "bin": {
+    "dyoe-trust-mcp": "index.js"
+  },
   "files": [
     "index.js",
-    "guard.js",
+    "catalog.json",
     "README.md",
-    "SPEC.md",
-    "TRUST-METHODOLOGY.md"
+    "LICENSE"
   ],
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node test/stdio-smoke.mjs",
+    "sync-catalog": "node scripts/sync-catalog.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
   },
   "keywords": [
     "mcp",
-    "modelcontextprotocol",
+    "model-context-protocol",
+    "mcp-server",
     "x402",
-    "agent",
+    "agent-payments",
+    "ai-agents",
     "trust",
     "scam-check",
     "due-diligence",
-    "human-in-the-loop",
+    "wallet-screening",
     "base",
     "usdc",
     "dyoe"
   ],
+  "author": "DYOE Way (https://dyoeway.org)",
   "license": "MIT",
-  "author": "DYOE Way",
   "homepage": "https://agents.dyoeway.org",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bjyoe2016/dyoe-agent-tools-mcp.git"
   },
+  "bugs": {
+    "url": "https://github.com/bjyoe2016/dyoe-agent-tools-mcp/issues"
+  },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "viem": "^2.53.1",
     "x402-fetch": "^1.2.0",
-    "zod": "^4.4.3"
+    "zod": "^4.1.0"
   }
 }
